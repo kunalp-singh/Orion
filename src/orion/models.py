@@ -1,6 +1,8 @@
 """Provider-agnostic models shared by Orion's control loop."""
 
 from enum import StrEnum
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,3 +37,15 @@ class State(BaseModel):
     retrieval_confidence: float = Field(ge=0, le=1)
     remaining_token_budget: float = Field(ge=0, le=1)
     task_phase: TaskPhase
+
+
+class ContextItem(BaseModel):
+    """A durable fact that can be retained independently of active context."""
+
+    content: str
+    source: str = "agent"
+    task_id: str | None = None
+    scope: str = "default"
+    importance: float = Field(default=0.5, ge=0, le=1)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: dict[str, Any] = Field(default_factory=dict)

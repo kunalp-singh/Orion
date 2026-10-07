@@ -6,9 +6,10 @@ from typing import Any
 import httpx
 
 from .agent import LLMResponse, ToolCall
+from .providers import LLMProvider
 
 
-class GeminiClient:
+class GeminiClient(LLMProvider):
     """Call Gemini generateContent and normalize its function-call response."""
 
     def __init__(
@@ -23,6 +24,8 @@ class GeminiClient:
         self._client = http_client or httpx.Client(timeout=120)
         self._owns_client = http_client is None
         self._api_key = api_key
+        self.provider_name = "gemini"
+        self.model_name = model
 
     def complete(
         self,
@@ -85,7 +88,8 @@ class GeminiClient:
 
     @staticmethod
     def _parse_response(data: Mapping[str, Any]) -> LLMResponse:
-        candidate = data.get("candidates", [{}])[0]
+        candidates = data.get("candidates", [])
+        candidate = candidates[0] if candidates else {}
         parts = candidate.get("content", {}).get("parts", [])
         text = "".join(part.get("text", "") for part in parts)
         calls = [
@@ -98,3 +102,6 @@ class GeminiClient:
             tool_calls=calls,
             finish_reason=candidate.get("finishReason", "stop"),
         )
+
+
+GeminiProvider = GeminiClient

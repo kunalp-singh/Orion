@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     mongo_database: str = "orion"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.0-flash"
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.1-8b-instant"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+    llm_provider: str = "gemini"
+    temperature: float = 0.0
+    max_tokens: int | None = None
     workspace_root: str = "."
 
 

@@ -1,6 +1,7 @@
 """Safe local tools exposed to the coding agent."""
 
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -24,6 +25,7 @@ class WorkspaceTools:
     def write_file(self, arguments: Mapping[str, object]) -> str:
         path = self._path(self._required_string(arguments, "path"))
         content = self._required_string(arguments, "content")
+        content = content.replace("\\n", "\n")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return f"Wrote {path.relative_to(self.root)}"
@@ -34,6 +36,8 @@ class WorkspaceTools:
             isinstance(part, str) for part in command_value
         ):
             raise ValueError("command must be a list of strings")
+        if command_value and command_value[0] in {"python", "python3"}:
+            command_value = [sys.executable, *command_value[1:]]
         result = subprocess.run(
             command_value,
             cwd=self.root,
