@@ -231,6 +231,140 @@ automatic research claims. In particular:
 Generated experiment results are ignored under `results/` so raw logs and
 derived plots are not accidentally committed with source changes.
 
+## Completed experiment record
+
+The following experiments were run locally with Ollama and `qwen3:8b`. The
+results are documented here as implementation evidence, not as claims of
+general model or policy superiority.
+
+### Initial four-task comparison
+
+Configuration:
+
+- Tasks: `add_numbers`, `fix_greeting`, `complete_config`, `refactor_pipeline`
+- Policies: `no_management`, `static`, `rule_based_orion`
+- Provider/model: Ollama / `qwen3:8b`
+- Horizon: 5
+- Matrix: 12 task-policy runs
+
+This run established that the agent loop, policy variants, raw JSONL logging,
+CSV export, and objective test evaluation worked across all four fixtures.
+The original summary incorrectly treated a passing objective test combined
+with `horizon_exceeded` as task failure. That classification was corrected so
+`task_success` now means only that the objective test passed, while
+`agent_status` and `agent_completed` remain separate fields.
+
+The initial logs selected `RETRIEVE` three times for RuleBasedOrion:
+
+- `add_numbers`: steps 2 and 3
+- `refactor_pipeline`: step 2
+
+Those pre-ingestion retrievals returned no context items. This exposed a real
+prototype limitation: the in-memory store had not yet received enough
+legitimate task information to make retrieval useful.
+
+### Retrieval instrumentation validation
+
+Two targeted runs (`add_numbers` and `refactor_pipeline`, both under
+RuleBasedOrion) validated the retrieval trace and reproduced the empty-store
+case. Five retrieval events were selected and executed, but all returned zero
+items. The traces correctly showed no active-context change and zero
+retrieval-contributed tokens.
+
+The retrieval path was then corrected without changing policy thresholds or
+decision rules. The local `InMemoryContextStore` now receives task
+constraints, file contents, and test observations through explicit ingestion.
+Retrieval accounting was separated from provider input-token growth.
+
+A focused local validation reached 22 passing tests and proved that a stored
+context item could be retrieved, identified, and inserted into active context.
+
+### End-to-end retrieval validation
+
+One real `add_numbers` / RuleBasedOrion / Ollama run validated the corrected
+path:
+
+1. legitimate context was ingested,
+2. `RETRIEVE` was selected,
+3. stored items were returned,
+4. retrieved content was inserted into active context,
+5. item IDs, relevance scores, token contribution, snapshots, and retrieval
+   latency were persisted.
+
+This validated the wiring and observability of retrieval. It was not a
+performance comparison.
+
+### Post-fix three-policy comparison
+
+Configuration:
+
+- Task: `add_numbers`
+- Policies: `no_management`, `static`, `rule_based_orion`
+- Provider/model: Ollama / `qwen3:8b`
+- Horizon: 5
+- One fresh workspace per policy
+
+All three objective test suites passed. All three agents reached the
+five-step horizon and therefore had `agent_completed=false`.
+
+| Policy | Objective test | Status | Steps | Input tokens | Output tokens | Total tokens | Latency |
+|---|---:|---|---:|---:|---:|---:|---:|
+| No Management | Pass | `horizon_exceeded` | 5 | 1,762 | 3,030 | 4,792 | 158.3 s |
+| Static | Pass | `horizon_exceeded` | 5 | 1,978 | 4,860 | 6,878 | 372.5 s |
+| RuleBasedOrion | Pass | `horizon_exceeded` | 5 | 1,745 | 2,243 | 3,988 | 188.4 s |
+
+Observed action sequences:
+
+```text
+No Management:    IGNORE -> IGNORE -> IGNORE -> IGNORE -> IGNORE
+Static:           IGNORE -> IGNORE -> IGNORE -> IGNORE -> IGNORE
+RuleBasedOrion:   IGNORE -> RETRIEVE -> RETRIEVE -> RETRIEVE -> RETRIEVE
+```
+
+RuleBasedOrion produced four successful retrieval events:
+
+| Step | Item IDs | Relevance scores | Retrieval tokens added | Context tokens before -> after |
+|---:|---|---|---:|---|
+| 2 | `2`, `1` | `0.80`, `0.18` | 47 | 256 -> 340 |
+| 3 | `1` | `0.45` | 32 | 340 -> 353 |
+| 4 | `1` | `0.45` | 32 | 353 -> 383 |
+| 5 | `1` | `0.45` | 32 | 383 -> 413 |
+
+The final recorded context sizes were 505 tokens for No Management, 544 for
+Static, and 413 for RuleBasedOrion. In this single task and single run per
+policy, RuleBasedOrion used fewer total tokens than the two baselines, while
+No Management had lower latency than RuleBasedOrion. All policies passed, so
+these records do not establish that retrieval caused the token difference or
+improved task performance.
+
+### What the experiments establish
+
+**Observed**
+
+- The five-action policy/executor architecture runs against a real coding
+  agent.
+- Objective test success and agent termination are recorded separately.
+- RuleBasedOrion selected real retrieval actions.
+- The corrected in-memory retrieval path returned stored items and inserted
+  them into active context.
+- Retrieval-specific token contribution and latency were persisted.
+- Raw JSONL, CSV, and plot generation were validated.
+
+**Possible interpretation**
+
+- Explicit context management can change the active context and model token
+  measurements during execution.
+- A populated context store may allow a policy to recover previously observed
+  task information.
+
+**Not supported**
+
+- Orion is not shown to be generally better than either baseline.
+- No statistical significance or general efficiency claim can be made.
+- Retrieval is not shown to be necessary for task correctness.
+- The single-task results do not establish behavior on other tasks, models,
+  horizons, or providers.
+
 ## Repository layout
 
 ```text
@@ -255,9 +389,17 @@ SYSTEM_DESIGN.md  Detailed design and rationale
 
 ## Status
 
-The current implementation validates the local retrieval path end to end and
-persists retrieval observability in agent step records. The next research step
-is a fresh multi-task comparison across the three policies. That experiment
-must be run separately from the longer-horizon `refactor_pipeline` stress
-task, and no broad performance conclusion should be drawn from the existing
+The implementation and retrieval instrumentation have been validated locally
+and in a real end-to-end Ollama run. The next planned comparison is:
+
+- Tasks: `add_numbers`, `complete_config`, `fix_greeting`
+- Policies: `no_management`, `static`, `rule_based_orion`
+- Provider/model: Ollama / `qwen3:8b`
+- Horizon: 5
+
+That comparison has not been included in this repository as a new result and
+should be run as a fresh experiment with preserved raw logs. The
+`refactor_pipeline` fixture should remain a separate longer-horizon stress
+experiment because it exercises multi-file dependencies and revisit cycles.
+No broad performance conclusion should be drawn from the existing
 single-task validation.
